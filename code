@@ -1,0 +1,74 @@
+pip install numpy pandas tensorflow biopython
+import numpy as np
+import pandas as pd
+from Bio import SeqIO
+import tensorflow as tf
+from tensorflow.keras.layers import Conv1D, LSTM, Dense, Dropout, Bidirectional
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.optimizers import Adam
+from sklearn.metrics import accuracy_score
+def parse_fasta(filepath):
+    sequences = []
+    for record in SeqIO.parse(filepath, "fasta"):
+        sequences.append(str(record.seq))
+    return sequences
+
+# Convert amino acids to one-hot encoding
+def one_hot_encode_sequence(sequence, amino_acids="ACDEFGHIKLMNPQRSTVWY"):
+    amino_to_index = {aa: idx for idx, aa in enumerate(amino_acids)}
+    encoding = np.zeros((len(sequence), len(amino_acids)))
+    for i, aa in enumerate(sequence):
+        if aa in amino_to_index:
+            encoding[i, amino_to_index[aa]] = 1
+    return encoding
+def build_cnn_model(input_shape, num_classes):
+    model = Sequential([
+        Conv1D(filters=64, kernel_size=3, activation='relu', input_shape=input_shape),
+        Conv1D(filters=128, kernel_size=3, activation='relu'),
+        Dropout(0.5),
+        Dense(64, activation='relu'),
+        Dense(num_classes, activation='softmax')
+    ])
+    model.compile(optimizer=Adam(), loss='categorical_crossentropy', metrics=['accuracy'])
+    return model
+def build_rnn_model(input_shape):
+    model = Sequential([
+        Bidirectional(LSTM(64, return_sequences=True), input_shape=input_shape),
+        Bidirectional(LSTM(32)),
+        Dense(128, activation='relu'),
+        Dropout(0.5),
+        Dense(2, activation='softmax')  # Binary output for contact prediction
+    ])
+    model.compile(optimizer=Adam(), loss='binary_crossentropy', metrics=['accuracy'])
+    return model
+
+  # Generate synthetic data
+sequences = parse_fasta('pdb_seqres.fasta')
+
+# Generate variable-length one-hot encoded sequences with dtype=object
+X_data = np.array([one_hot_encode_sequence(seq) for seq in sequences], dtype=object)
+
+max_len = 1000
+y_data = np.random.randint(2, size=(len(X_data), X_data.shape[1],max_len, 2))  # Random labels for binary classification
+
+# Train CNN model
+cnn_model = build_cnn_model(input_shape=(X_data.shape[1], X_data.shape[2]), num_classes=3)
+cnn_model.fit(X_data, y_data, epochs=10, batch_size=16, validation_split=0.2)
+
+# Train RNN model
+rnn_model = build_rnn_model(input_shape=(X_data.shape[1], X_data.shape[2]))
+rnn_model.fit(X_data, y_data, epochs=10, batch_size=16, validation_split=0.2)
+
+  def evaluate_model(model, X_test, y_test):
+    predictions = model.predict(X_test)
+    y_pred = np.argmax(predictions, axis=-1)
+    y_true = np.argmax(y_test, axis=-1)
+    accuracy = accuracy_score(y_true.flatten(), y_pred.flatten())
+    print(f'Accuracy: {accuracy:.4f}')
+    return accuracy
+
+# Example evaluation (use real test data)
+X_test = X_data  # Replace with actual test data
+y_test = y_data  # Replace with actual test labels
+evaluate_model(cnn_model, X_test, y_test)
+evaluate_model(rnn_model, X_test, y_test)
